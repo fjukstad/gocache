@@ -11,17 +11,15 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 )
+
+// Time until cache entry is invalidated. Default 24h.
+var cacheInvalidation = "24h"
 
 type Entry struct {
 	Response *http.Response
 	Content  string
-}
-
-func main() {
-	fmt.Println("Testing web cache")
-	url := "http://blog.golang.org/error-handling-and-go"
-	Get(url)
 }
 
 func Get(url string) (resp *http.Response, err error) {
@@ -32,6 +30,14 @@ func Get(url string) (resp *http.Response, err error) {
 		return getFromWeb(url)
 	}
 
+	return
+}
+
+// Set time until cache entry is invalidated such as "300h", "1.5s" or "2h45m".
+// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h". (anything
+// time.ParseDuration can parse)
+func SetInvalidationTime(time string) {
+	cacheInvalidation = time
 	return
 }
 
@@ -126,6 +132,9 @@ func generateCacheEntry(resp *http.Response, body []byte) Entry {
 	// Cannot marshal the body from get go
 	entry.Response.Body = nil
 
+	// we don't care for the original request.
+	entry.Response.Request = nil
+
 	return entry
 
 }
@@ -159,7 +168,35 @@ func getFromCache(url string) (resp *http.Response, err error) {
 
 	resp = entry.GenerateHttpResponse()
 
-	return
+	// FIRST CHECK IF OLD ENTRY
+	respTime := resp.Header.Get("Date")
+
+	loc, err := time.LoadLocation("Local")
+	if err != nil {
+		fmt.Println("Could not load location", err)
+		return nil, err
+	}
+
+	t0, err := time.ParseInLocation("Mon, 2 Jan 2006 15:04:05 MST", respTime, loc)
+	if err != nil {
+		fmt.Println("Could not parse time", err, respTime)
+		return nil, err
+	}
+
+	waitTime, err := time.ParseDuration(cacheInvalidation)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	t0 = t0.Add(waitTime)
+
+	if time.Now().After(t0) {
+		fmt.Println("Cache entry was too old, fetching new from", url)
+		getFromWeb(url)
+	}
+
+	return resp, nil
 
 }
 
