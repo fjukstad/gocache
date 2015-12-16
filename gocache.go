@@ -1,273 +1,250 @@
 package gocache
 
-import(
-    "fmt"
-    "net/http"
-    "errors"
-    "os"
-    "strings"
-    "log"
-    "encoding/json" 
-    "bytes"
-    "io/ioutil"
-    "path"
-    "io"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"path"
+	"strings"
 )
 
-type Entry struct{
-    Response *http.Response
-    Content string
+type Entry struct {
+	Response *http.Response
+	Content  string
 }
 
-
-func main(){
-    fmt.Println("Testing web cache");
-    url := "http://blog.golang.org/error-handling-and-go"
-    Get(url)
+func main() {
+	fmt.Println("Testing web cache")
+	url := "http://blog.golang.org/error-handling-and-go"
+	Get(url)
 }
 
 func Get(url string) (resp *http.Response, err error) {
-    
-    resp, err = getFromCache(url) 
-   
-    if err != nil{
-        //log.Println(url,"could not be served out of cache.", err)
-        return getFromWeb(url) 
-    }
-    
-    //log.Print("Request to ", url, " served out of cache") 
-    return 
+
+	resp, err = getFromCache(url)
+
+	if err != nil {
+		return getFromWeb(url)
+	}
+
+	return
 }
 
 // Fetch contents of url from web and write to cache
-func getFromWeb(url string) (resp *http.Response, err error){
-    resp, err = http.Get(url) 
-    
-    if err != nil{
-        return
-    }
-    var resp2 http.Response
-    resp2 = *resp
+func getFromWeb(url string) (resp *http.Response, err error) {
+	resp, err = http.Get(url)
 
-    defer resp.Body.Close()
+	if err != nil {
+		return
+	}
+	var resp2 http.Response
+	resp2 = *resp
 
-    // Draining the body
-    
-    body, err := ioutil.ReadAll(resp.Body) 
+	defer resp.Body.Close()
 
-    if err != nil {
-        log.Print("Reading response body went bad. ", err); 
-    
-    }
+	// Draining the body
+	body, err := ioutil.ReadAll(resp.Body)
 
-    writeToCache(url, body, &resp2)   
+	if err != nil {
+		fmt.Print("Reading response body went bad. ", err)
 
-    resp.Body = nopCloser{bytes.NewBufferString(string(body))} 
+	}
 
+	writeToCache(url, body, &resp2)
+	resp.Body = nopCloser{bytes.NewBufferString(string(body))}
 
-    return 
+	return
 }
 
-func writeToCache(url string, body []byte, resp *http.Response){
-    
-    cacheEntry := generateCacheEntry(resp, body)
+func writeToCache(url string, body []byte, resp *http.Response) {
 
-    b, err := json.Marshal(cacheEntry)
+	cacheEntry := generateCacheEntry(resp, body)
 
-    if err != nil {
-        log.Println("Could not marshal response ", err)
-        return 
-    }
-    
+	b, err := json.Marshal(cacheEntry)
 
-    filename := getFilePath(url)
-    
-    // Set up any directory needed to write the file. 
-    // e.g. vg.no/first/second/file will be stored as
-    // cache/first/second/file 
+	if err != nil {
+		fmt.Println("Could not marshal response ", err)
+		return
+	}
 
-    err = createDirectories(filename)
-    if err != nil{
-        pe, _ := err.(*os.PathError) 
+	filename := getFilePath(url)
 
-        if ! strings.Contains(pe.Error(),"file exists") {
-            log.Println("Could not create directories ", err)
-            return
-        }
-    }
+	// Set up any directory needed to write the file.
+	// e.g. vg.no/first/second/file will be stored as
+	// cache/first/second/file
 
-    // If the file hasn't got an extension, set it to .json
-    name := strings.Split(filename,"/")
-    fn := name[len(name)-1]
+	err = createDirectories(filename)
+	if err != nil {
+		pe, _ := err.(*os.PathError)
 
-    if len(strings.Split(fn, ".")) < 2{
-        filename = filename + ".json"
-    }
+		if !strings.Contains(pe.Error(), "file exists") {
+			fmt.Println("Could not create directories ", err)
+			return
+		}
+	}
 
-    // Create file 
-    file, err := os.Create(filename)
-    if err != nil {
-        log.Println("could not create cache file ", err)
-        return 
-    }
+	// If the file hasn't got an extension, set it to .json
+	name := strings.Split(filename, "/")
+	fn := name[len(name)-1]
 
-    // Close and check for error on exit 
-    defer func() {
-        if err := file.Close(); err != nil {
-            log.Println("Could not close file ", err)
-        }
-    }()
+	if len(strings.Split(fn, ".")) < 2 {
+		filename = filename + ".json"
+	}
 
+	// Create file
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Println("could not create cache file ", err)
+		return
+	}
 
-    // Write file 
-    _, err = file.Write(b)
-    if err != nil{
-        log.Println("Could not write to cache file ", err)
-    }
-    
-    //log.Println(url, "successfully written to cache"); 
-}
+	// Close and check for error on exit
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Println("Could not close file ", err)
+		}
+	}()
 
-func generateCacheEntry(resp *http.Response, body []byte ) Entry {
-    Response := resp
-    Content := string(body)
-    entry := Entry{Response, Content} 
-    
-
-    // Cannot marshal the body from get go
-    entry.Response.Body = nil
-
-    return entry
+	// Write file
+	_, err = file.Write(b)
+	if err != nil {
+		fmt.Println("Could not write to cache file ", err)
+	}
 
 }
 
+func generateCacheEntry(resp *http.Response, body []byte) Entry {
+	Response := resp
+	Content := string(body)
+	entry := Entry{Response, Content}
+
+	// Cannot marshal the body from get go
+	entry.Response.Body = nil
+
+	return entry
+
+}
 
 // Try to fetch contents of url from cache
 func getFromCache(url string) (resp *http.Response, err error) {
-    
-    filename := getFilePath(url)
 
+	filename := getFilePath(url)
 
-    // If the file hasn't got an extension, set it to .json
-    name := strings.Split(filename,"/")
-    fn := name[len(name)-1]
+	// If the file hasn't got an extension, set it to .json
+	name := strings.Split(filename, "/")
+	fn := name[len(name)-1]
 
-    if len(strings.Split(fn, ".")) < 2{
-        filename = filename + ".json"
-    }
-    
-    file, err := os.Open(filename) 
-    if err != nil{
-        err = errors.New("File '"+filename+"' not Found") 
-        return 
-    }
+	if len(strings.Split(fn, ".")) < 2 {
+		filename = filename + ".json"
+	}
 
-    defer file.Close() 
+	file, err := os.Open(filename)
+	if err != nil {
+		err = errors.New("File '" + filename + "' not Found")
+		return
+	}
 
-    entry, err := readFromFile(file)
-    
-    if err != nil{
-        return
-    }
+	defer file.Close()
 
-    resp = entry.GenerateHttpResponse() 
+	entry, err := readFromFile(file)
 
-    return
+	if err != nil {
+		return
+	}
 
-} 
+	resp = entry.GenerateHttpResponse()
+
+	return
+
+}
 
 // Read cache entry from file
 func readFromFile(file *os.File) (entry *Entry, err error) {
-    fileinfo, err := file.Stat() 
-    var size int
-    size = int(fileinfo.Size())
+	fileinfo, err := file.Stat()
+	var size int
+	size = int(fileinfo.Size())
 
-    buf := make([]byte, size)
-    
-    _, err = file.Read(buf)
+	buf := make([]byte, size)
 
-    if err != nil{
-        //log.Println("Reading file got:", err, "after",n,"bytes"); 
-        return entry, errors.New("Reading file went wrong") 
-    }
-        
+	_, err = file.Read(buf)
 
-    // Must trim buffer before unmarshaling it. This is because of 
-    // the unmarshaling failing if entire buffer is returned
-    buf = bytes.Trim(buf[0:], string(0))    
+	if err != nil {
+		return entry, errors.New("Reading file went wrong")
+	}
 
+	// Must trim buffer before unmarshaling it. This is because of
+	// the unmarshaling failing if entire buffer is returned
+	buf = bytes.Trim(buf[0:], string(0))
 
-    entry = new(Entry)
-    err = json.Unmarshal(buf, entry)
+	entry = new(Entry)
+	err = json.Unmarshal(buf, entry)
 
-    if err != nil {
-        log.Print("Unmarshaling gone wrong: ", err) 
-        return entry, errors.New("Unmarshaling gone wrong")
-    }
+	if err != nil {
+		fmt.Print("Unmarshaling gone wrong: ", err)
+		return entry, errors.New("Unmarshaling gone wrong")
+	}
 
-    return
+	return
 }
 
-func (entry *Entry) Print () {
-    
-    //n := bytes.Index(entry.Content, []byte{0})
-    //content := string(entry.Content[:n]) 
-    log.Print("Content: ", entry.Content) 
-
+func (entry *Entry) Print() {
+	fmt.Print("Content: ", entry.Content)
 }
 
-func (entry *Entry) GenerateHttpResponse() (resp *http.Response){
+func (entry *Entry) GenerateHttpResponse() (resp *http.Response) {
 
-    resp = entry.Response
-    resp.Body = nopCloser{bytes.NewBufferString(entry.Content)} 
+	resp = entry.Response
+	resp.Body = nopCloser{bytes.NewBufferString(entry.Content)}
 
-
-    return resp
+	return resp
 
 }
-
 
 func getFilePath(url string) (dir string) {
 	urlTokens := strings.Split(url, "/")
-    // 2 because we need to strip away 'http:', ' '
-    strippedUrl := urlTokens[2:] 
-	dir = "cache/"+strings.Join(strippedUrl,"/")
-	return 
+	// 2 because we need to strip away 'http:', ' '
+	strippedUrl := urlTokens[2:]
+	dir = "cache/" + strings.Join(strippedUrl, "/")
+	return
 }
 
 func createDirectories(filename string) error {
-    
-    filepath := path.Dir(filename)
-    directories := strings.Split(filepath, "/") 
-    
-    p := "" 
-    for i := range directories {
-        p += directories[i] + "/"
-        err := os.Mkdir(p, 0755) 
 
-        if err != nil {
-            pe, _ := err.(*os.PathError) 
-            
-            // if folder exists, continue to the next one
-            if ! strings.Contains(pe.Error(),"file exists") {
-                log.Println("Mkdir failed miserably: ", err) 
-                return err
-            }
-        }
-    }
+	filepath := path.Dir(filename)
+	directories := strings.Split(filepath, "/")
 
-    return nil
+	p := ""
+	for i := range directories {
+		p += directories[i] + "/"
+		err := os.Mkdir(p, 0755)
+
+		if err != nil {
+			pe, _ := err.(*os.PathError)
+
+			// if folder exists, continue to the next one
+			if !strings.Contains(pe.Error(), "file exists") {
+				fmt.Println("Mkdir failed miserably: ", err)
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
-
-/* Below are from: 
-    https://groups.google.com/forum/#!topic/golang-nuts/J-Y4LtdGNSw
+/* Below are from:
+   https://groups.google.com/forum/#!topic/golang-nuts/J-Y4LtdGNSw
 */
 
-type nopCloser struct { 
-    io.Reader 
-} 
+type nopCloser struct {
+	io.Reader
+}
 
-func (nopCloser) Close() error { 
-    return nil
-} 
+func (nopCloser) Close() error {
+	return nil
+}
