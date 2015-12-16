@@ -1,9 +1,8 @@
 # gocache
 A HTTP cache written in go. 
 
-
-**Note**: When webpages are cached they are not updated unless they are manually removed from the filesystem. 
-Cached webpages are stored in a _cache_ directory in the current working directory of your go app. 
+**Note**: Cached webpages are stored in a _cache_ directory in the current
+working directory of your go app. 
 
 # Installing
   
@@ -42,4 +41,9 @@ func main() {
     
     // do whatever you'd like with resp 
 }
-    
+ 
+ ```
+
+# Cache Invalidation
+Use `gocache.SetInvalidationTime(time string)` to set the invalidation time for
+cache entries. Defaults to 24 hours. 
