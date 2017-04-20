@@ -22,7 +22,8 @@ with
 
     gocache.Get(url) 
   
-and you're good to go. The files are stored in the working directory of your go app under a _cache_ directory. 
+and you're good to go. The files are stored in the working directory of your go
+app under a _cache_ directory. 
 
 
 # Example 
@@ -45,5 +46,5 @@ func main() {
  ```
 
 # Cache Invalidation
-Use `gocache.SetInvalidationTime(time string)` to set the invalidation time for
-cache entries. Defaults to 24 hours. 
+Use the environment variable `GOCACHE_INVALIDATION` to set the invalidation time
+for cache entries. Defaults to 24 hours.

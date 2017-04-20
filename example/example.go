@@ -8,8 +8,6 @@ import (
 
 func main() {
 
-	gocache.SetInvalidationTime("1m")
-
 	url := "http://blog.golang.org/error-handling-and-go"
 
 	_, err := gocache.Get(url)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -15,7 +16,21 @@ import (
 )
 
 // Time until cache entry is invalidated. Default 24h.
-var cacheInvalidation = "24h"
+var cacheInvalidation = getCacheInvalidationTime()
+
+func getCacheInvalidationTime() time.Duration {
+	invalidationTime := os.Getenv("GOCACHE_INVALIDATION")
+	if invalidationTime == "" {
+		invalidationTime = "24h"
+	}
+
+	cacheInvalidationTime, err := time.ParseDuration(invalidationTime)
+	if err != nil {
+		fmt.Println("Could not parse cache invalidation. Setting to 24h.", err)
+		return time.Duration(24) * time.Hour
+	}
+	return cacheInvalidationTime
+}
 
 type Entry struct {
 	Response *http.Response
@@ -30,14 +45,6 @@ func Get(url string) (resp *http.Response, err error) {
 		return getFromWeb(url)
 	}
 
-	return
-}
-
-// Set time until cache entry is invalidated such as "300h", "1.5s" or "2h45m".
-// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h". (anything
-// time.ParseDuration can parse)
-func SetInvalidationTime(time string) {
-	cacheInvalidation = time
 	return
 }
 
@@ -133,16 +140,23 @@ func generateCacheEntry(resp *http.Response, body []byte) Entry {
 	entry.Response.Body = nil
 
 	// we don't care for the original request.
+	// commented the line below (14:55 1.8.2016 work on luftkvalitet).
+	// don't know why I set it to nil...
+
 	entry.Response.Request = nil
+	//entry.Response.Request.Cancel = nil
+
+	// Don't care for the tls connection state either
+	entry.Response.TLS = nil
 
 	return entry
 
 }
 
-// Try to fetch contents of url from cache
-func getFromCache(url string) (resp *http.Response, err error) {
+// Try to fetch contents of addr from cache
+func getFromCache(URL string) (resp *http.Response, err error) {
 
-	filename := getFilePath(url)
+	filename := getFilePath(URL)
 
 	// If the file hasn't got an extension, set it to .json
 	name := strings.Split(filename, "/")
@@ -183,18 +197,17 @@ func getFromCache(url string) (resp *http.Response, err error) {
 		return nil, err
 	}
 
-	waitTime, err := time.ParseDuration(cacheInvalidation)
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-
-	t0 = t0.Add(waitTime)
+	t0 = t0.Add(cacheInvalidation)
 
 	if time.Now().After(t0) {
-		fmt.Println("Cache entry was too old, fetching new from", url)
-		getFromWeb(url)
+		fmt.Println("Cache entry was too old, fetching new from", URL)
+		return getFromWeb(URL)
 	}
+
+	// Update response.request with applicable fields.
+	resp.Request = &http.Request{}
+	u, _ := url.Parse("")
+	resp.Request.URL = u
 
 	return resp, nil
 
