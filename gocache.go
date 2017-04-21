@@ -37,20 +37,35 @@ type Entry struct {
 	Content  string
 }
 
-func Get(url string) (resp *http.Response, err error) {
+func Get(url string) (*http.Response, error) {
 
-	resp, err = getFromCache(url)
-
+	resp, err := getFromCache(url, nil)
 	if err != nil {
-		return getFromWeb(url)
+		return getFromWeb(url, nil)
 	}
+	return resp, err
+}
 
-	return
+func Do(req *http.Request) (*http.Response, error) {
+	url := req.URL.String()
+	resp, err := getFromCache(url, req)
+	if err != nil {
+		return getFromWeb(url, req)
+	}
+	return resp, nil
 }
 
 // Fetch contents of url from web and write to cache
-func getFromWeb(url string) (resp *http.Response, err error) {
-	resp, err = http.Get(url)
+func getFromWeb(url string, req *http.Request) (resp *http.Response, err error) {
+	if req == nil {
+		req, err = http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	client := http.Client{}
+	resp, err = client.Do(req)
 
 	if err != nil {
 		return
@@ -154,7 +169,7 @@ func generateCacheEntry(resp *http.Response, body []byte) Entry {
 }
 
 // Try to fetch contents of addr from cache
-func getFromCache(URL string) (resp *http.Response, err error) {
+func getFromCache(URL string, req *http.Request) (resp *http.Response, err error) {
 
 	filename := getFilePath(URL)
 
@@ -201,7 +216,7 @@ func getFromCache(URL string) (resp *http.Response, err error) {
 
 	if time.Now().After(t0) {
 		fmt.Println("Cache entry was too old, fetching new from", URL)
-		return getFromWeb(URL)
+		return getFromWeb(URL, nil)
 	}
 
 	// Update response.request with applicable fields.
